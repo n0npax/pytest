@@ -248,9 +248,16 @@ def pytest_runtest_makereport(item, call):
 
     Stops at first non-None result, see :ref:`firstresult` """
 
+
 def pytest_runtest_logreport(report):
     """ process a test setup/call/teardown report relating to
     the respective phase of executing a test. """
+
+
+def pytest_runtest_configure_report(config):
+    """ set additional configuration
+    before pytest_runtest_logreport """
+
 
 # -------------------------------------------------------------------------
 # Fixture related hooks

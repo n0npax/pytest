@@ -27,7 +27,6 @@ else:
     unicode = str
     long = int
 
-
 class Junit(py.xml.Namespace):
     pass
 
@@ -168,6 +167,10 @@ class _NodeReporter(object):
         self._add_simple(
             Junit.error, msg, report.longrepr)
 
+    def append_sth(self, report, name):
+        self._add_simple(
+            getattr(Junit, name), name, report.longrepr)
+
     def append_skipped(self, report):
         if hasattr(report, "wasxfail"):
             self._add_simple(
@@ -236,7 +239,6 @@ def pytest_configure(config):
         config._xml = LogXML(xmlpath, config.option.junitprefix, config.getini("junit_suite_name"))
         config.pluginmanager.register(config._xml)
 
-
 def pytest_unconfigure(config):
     xml = getattr(config, '_xml', None)
     if xml:
@@ -271,6 +273,7 @@ class LogXML(object):
             'failure',
             'skipped',
         ], 0)
+        self.additional_fields = {}
         self.node_reporters = {}  # nodeid -> _NodeReporter
         self.node_reporters_ordered = []
         self.global_properties = []
@@ -312,6 +315,16 @@ class LogXML(object):
         reporter = self.node_reporter(report)
         reporter.record_testreport(report)
         return reporter
+
+    def pytest_runtest_configure_report(self, config):
+        if config:
+            for item in config:
+                name = item['name']
+                field = item.get('field', name)
+                field_value = item.get('field_value')
+
+                self.stats[name] = 0
+                self.additional_fields[name] = (field, field_value)
 
     def pytest_runtest_logreport(self, report):
         """handle a setup/call/teardown report, generating the appropriate
@@ -368,6 +381,15 @@ class LogXML(object):
         elif report.skipped:
             reporter = self._opentestcase(report)
             reporter.append_skipped(report)
+        else:
+            # check if should append
+            for name, (field, value) in self.additional_fields.items():
+                # if not bool(value) just check if field exist
+                if hasattr(report, field) and not value or \
+                        getattr(report, field) == value:
+                    reporter = self._opentestcase(report)
+                    reporter.append_sth(report, name)
+
         self.update_testcase_duration(report)
         if report.when == "teardown":
             reporter = self._opentestcase(report)
@@ -420,7 +442,6 @@ class LogXML(object):
                     self.stats['skipped'] + self.stats['error'] -
                     self.cnt_double_fail_tests)
         logfile.write('<?xml version="1.0" encoding="utf-8"?>')
-
         logfile.write(Junit.testsuite(
             self._get_global_properties_node(),
             [x.to_xml() for x in self.node_reporters_ordered],
@@ -429,7 +450,9 @@ class LogXML(object):
             failures=self.stats['failure'],
             skips=self.stats['skipped'],
             tests=numtests,
-            time="%.3f" % suite_time_delta, ).unicode(indent=0))
+            time="%.3f" % suite_time_delta,
+            **{key: self.stats[key] for key in self.additional_fields.keys()}
+            ).unicode(indent=0))
         logfile.close()
 
     def pytest_terminal_summary(self, terminalreporter):
